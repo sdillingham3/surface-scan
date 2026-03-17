@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Surface Scan — Security Recon</title>
+  <style>
+    :root {
+      --bg:      #080c18;
+      --bg2:     #0f1626;
+      --card:    #111827;
+      --border:  #1e293b;
+      --accent:  #00d4ff;
+      --purple:  #7c3aed;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+      --green:   #22c55e;
+      --yellow:  #eab308;
+      --orange:  #f97316;
+      --red:     #ef4444;
+      --mono:    'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; min-height: 100vh; }
+
+    /* ── Header ── */
+    header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent) 0%, var(--purple) 100%);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0;
+    }
+    header h1 { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; }
+    header h1 span { color: var(--accent); }
+    header .tagline { color: var(--muted); font-size: 12px; margin-left: auto; }
+
+    /* ── Main ── */
+    main { max-width: 1180px; margin: 0 auto; padding: 48px 24px; }
+
+    /* ── Hero ── */
+    .hero { text-align: center; margin-bottom: 48px; }
+    .hero h2 { font-size: 36px; font-weight: 800; letter-spacing: -1px; margin-bottom: 10px; }
+    .hero h2 span {
+      background: linear-gradient(90deg, var(--accent) 0%, var(--purple) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .hero p { color: var(--muted); font-size: 15px; margin-bottom: 32px; }
+
+    /* ── Scan form ── */
+    .scan-form { display: flex; gap: 10px; max-width: 540px; margin: 0 auto 20px; }
+    .scan-input {
+      flex: 1; background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 13px 18px; font-size: 16px; color: var(--text);
+      font-family: var(--mono); outline: none; transition: border-color .2s, box-shadow .2s;
+    }
+    .scan-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,212,255,.1); }
+    .scan-input::placeholder { color: var(--muted); }
+    .scan-btn {
+      background: linear-gradient(135deg, var(--accent) 0%, #0099cc 100%);
+      color: #000; border: none; border-radius: 10px; padding: 13px 28px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      transition: opacity .2s, transform .1s; white-space: nowrap;
+    }
+    .scan-btn:hover { opacity: .9; transform: translateY(-1px); }
+    .scan-btn:active { transform: translateY(0); }
+    .scan-btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+    .checks-list {
+      display: flex; justify-content: center; flex-wrap: wrap; gap: 20px; color: var(--muted); font-size: 12px;
+    }
+    .checks-list span { display: flex; align-items: center; gap: 5px; }
+    .checks-list span::before { content: ''; display: block; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+
+    /* ── Results ── */
+    .results-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; }
+
+    /* ── Card ── */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .card-head {
+      padding: 16px 18px; display: flex; align-items: center; justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title { display: flex; align-items: center; gap: 10px; }
+    .card-icon {
+      width: 30px; height: 30px; border-radius: 7px;
+      display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .card-title h3 { font-size: 14px; font-weight: 600; }
+    .card-body { padding: 18px; }
+
+    /* ── Grade badge ── */
+    .grade {
+      width: 46px; height: 46px; border-radius: 8px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 800; font-family: var(--mono);
+    }
+    .gA  { background: rgba(34,197,94,.15);  color: #4ade80; border: 1px solid rgba(34,197,94,.35); }
+    .gB  { background: rgba(132,204,22,.15); color: #a3e635; border: 1px solid rgba(132,204,22,.35); }
+    .gC  { background: rgba(234,179,8,.15);  color: var(--yellow); border: 1px solid rgba(234,179,8,.35); }
+    .gD  { background: rgba(249,115,22,.15); color: var(--orange); border: 1px solid rgba(249,115,22,.35); }
+    .gF  { background: rgba(239,68,68,.15);  color: var(--red);    border: 1px solid rgba(239,68,68,.35); }
+    .gX  { background: rgba(100,116,139,.1); color: var(--muted);  border: 1px solid var(--border); font-size: 12px; }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 18px; height: 18px; border: 2px solid var(--border);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Status rows ── */
+    .row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(30,41,59,.6); }
+    .row:last-child { border-bottom: none; }
+    .dot {
+      width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 11px; margin-top: 1px;
+    }
+    .pass { background: rgba(34,197,94,.2);   color: var(--green); }
+    .fail { background: rgba(239,68,68,.2);   color: var(--red); }
+    .warn { background: rgba(234,179,8,.2);   color: var(--yellow); }
+    .info { background: rgba(0,212,255,.1);   color: var(--accent); }
+    .row-label { flex: 1; }
+    .row-label .name { font-size: 13px; font-weight: 500; font-family: var(--mono); }
+    .row-label .desc { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+    .row-val { font-size: 11px; font-family: var(--mono); color: var(--muted); }
+
+    /* ── Findings ── */
+    .finding {
+      display: flex; gap: 8px; padding: 8px 12px; border-radius: 6px;
+      margin-bottom: 6px; font-size: 12px; line-height: 1.4;
+    }
+    .finding:last-child { margin-bottom: 0; }
+    .fc { background: rgba(239,68,68,.12); border-left: 3px solid var(--red); }
+    .fh { background: rgba(249,115,22,.1); border-left: 3px solid var(--orange); }
+    .fm { background: rgba(234,179,8,.1);  border-left: 3px solid var(--yellow); }
+    .fl { background: rgba(0,212,255,.06); border-left: 3px solid rgba(0,212,255,.3); }
+    .fi { background: rgba(100,116,139,.07); border-left: 3px solid rgba(100,116,139,.3); color: var(--muted); }
+
+    /* ── Tech tags ── */
+    .tag {
+      display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; margin: 3px;
+      background: rgba(0,212,255,.1); border: 1px solid rgba(0,212,255,.2); color: var(--accent);
+    }
+
+    /* ── Error ── */
+    .error { padding: 14px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); border-radius: 8px; color: var(--red); font-size: 13px; }
+
+    /* ── Deep dive ── */
+    .deep-dive { margin-top: 32px; padding: 22px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+    .deep-dive h3 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 14px; }
+    .deep-links { display: flex; flex-wrap: wrap; gap: 10px; }
+    .deep-link {
+      display: flex; align-items: center; gap: 7px; padding: 9px 14px;
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+      text-decoration: none; color: var(--text); font-size: 13px;
+      transition: border-color .2s, color .2s;
+    }
+    .deep-link:hover { border-color: var(--accent); color: var(--accent); }
+    .deep-link::after { content: '↗'; font-size: 10px; opacity: .5; margin-left: 2px; }
+
+    .hidden { display: none !important; }
+
+    @media (max-width: 580px) {
+      .scan-form { flex-direction: column; }
+      .results-grid { grid-template-columns: 1fr; }
+      .hero h2 { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">&#x1F50D;</div>
+  <h1>Surface<span>Scan</span></h1>
+  <span class="tagline">Security Recon Tool</span>
+</header>
+
+<main>
+  <div class="hero">
+    <h2>Expose Your <span>Attack Surface</span></h2>
+    <p>Automated recon across headers, SSL/TLS, DNS authentication, open ports, and tech fingerprinting</p>
+    <div class="scan-form">
+      <input id="domainInput" class="scan-input" type="text" placeholder="example.com" autocomplete="off" spellcheck="false" />
+      <button id="scanBtn" class="scan-btn" onclick="startScan()">Scan</button>
+    </div>
+    <div class="checks-list">
+      <span>HTTP Security Headers</span>
+      <span>SSL / TLS</span>
+      <span>DNS (SPF / DMARC)</span>
+      <span>Open Ports</span>
+      <span>CMS / Tech Stack</span>
+    </div>
+  </div>
+
+  <div id="resultsSection" class="hidden">
+    <div class="results-grid">
+
+      <!-- Headers -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(168,85,247,.15)">&#x1F6E1;&#xFE0F;</div>
+            <h3>HTTP Security Headers</h3>
+          </div>
+          <div class="grade gX" id="headersGrade"><div class="spinner"></div></div>
+        </div>
+        <div class="card-body" id="headersBody">
+          <p style="color:var(--muted);font-size:13px">Checking security headers&hellip;</p>
+        </div>
+      </div>
+
+      <!-- SSL -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(0,212,255,.1)">&#x1F512;</div>
+            <h3>SSL / TLS Configuration</h3>
+          </div>
+          <div class="grade gX" id="sslGrade"><div class="spinner"></div></div>
+        </div>
+        <div class="card-body" id="sslBody">
+          <p style="color:var(--muted);font-size:13px">Starting SSL Labs analysis &mdash; may take 1&ndash;2 min&hellip;</p>
+        </div>
+      </div>
+
+      <!-- DNS -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(234,179,8,.1)">&#x1F4CB;</div>
+            <h3>DNS Records</h3>
+          </div>
+          <div class="grade gX" id="dnsGrade"><div class="spinner"></div></div>
+        </div>
+        <div class="card-body" id="dnsBody">
+          <p style="color:var(--muted);font-size:13px">Checking SPF, DMARC, MX&hellip;</p>
+        </div>
+      </div>
+
+      <!-- Ports -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(239,68,68,.1)">&#x1F50C;</div>
+            <h3>Open Ports</h3>
+          </div>
+          <div class="grade gX" id="portsGrade"><div class="spinner"></div></div>
+        </div>
+        <div class="card-body" id="portsBody">
+          <p style="color:var(--muted);font-size:13px">Scanning 20 common ports&hellip;</p>
+        </div>
+      </div>
+
+      <!-- CMS -->
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <div class="card-icon" style="background:rgba(34,197,94,.1)">&#x1F9EC;</div>
+            <h3>CMS / Tech Stack</h3>
+          </div>
+          <div class="grade gX" id="cmsGrade"><div class="spinner"></div></div>
+        </div>
+        <div class="card-body" id="cmsBody">
+          <p style="color:var(--muted);font-size:13px">Fingerprinting technology stack&hellip;</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Deep dive links -->
+    <div class="deep-dive">
+      <h3>Deep Dive &mdash; External Tools</h3>
+      <div class="deep-links" id="deepLinks"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ── Grade helpers ────────────────────────────────────────────────────────────
+
+function gradeClass(g) {
+  if (!g) return 'gX';
+  const c = g[0].toUpperCase();
+  return c === 'A' ? 'gA' : c === 'B' ? 'gB' : c === 'C' ? 'gC' : c === 'D' ? 'gD' : c === 'F' ? 'gF' : 'gX';
+}
+
+function setGrade(id, g) {
+  const el = document.getElementById(id);
+  el.className = `grade ${gradeClass(g)}`;
+  el.textContent = g || '?';
+}
+
+// ── Finding helpers ──────────────────────────────────────────────────────────
+
+const SEVERITY_ICON  = { critical: '💀', high: '🔴', medium: '🟡', low: '🔵', info: 'ℹ️' };
+const SEVERITY_CLASS = { critical: 'fc', high: 'fh', medium: 'fm', low: 'fl', info: 'fi' };
+
+function finding(f) {
+  return `<div class="finding ${SEVERITY_CLASS[f.severity] || 'fi'}">
+    <span>${SEVERITY_ICON[f.severity] || '•'}</span>
+    <span>${esc(f.message)}</span>
+  </div>`;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function trunc(s, n) {
+  return s && s.length > n ? s.slice(0, n) + '…' : (s || '');
+}
+
+// ── Main scan ────────────────────────────────────────────────────────────────
+
+async function startScan() {
+  let domain = document.getElementById('domainInput').value.trim();
+  domain = domain.replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+  if (!domain) { document.getElementById('domainInput').focus(); return; }
+
+  document.getElementById('resultsSection').classList.remove('hidden');
+  document.getElementById('scanBtn').disabled = true;
+  resetCards();
+  updateDeepLinks(domain);
+
+  await Promise.all([
+    runHeaders(domain),
+    runSsl(domain),
+    runDns(domain),
+    runPorts(domain),
+    runCms(domain),
+  ]);
+
+  document.getElementById('scanBtn').disabled = false;
+}
+
+function resetCards() {
+  ['headers','ssl','dns','ports','cms'].forEach(id => {
+    const g = document.getElementById(id + 'Grade');
+    g.className = 'grade gX';
+    g.innerHTML = '<div class="spinner"></div>';
+  });
+  document.getElementById('headersBody').innerHTML = '<p style="color:var(--muted);font-size:13px">Checking security headers&hellip;</p>';
+  document.getElementById('sslBody').innerHTML     = '<p style="color:var(--muted);font-size:13px">Starting SSL Labs analysis &mdash; may take 1&ndash;2 min&hellip;</p>';
+  document.getElementById('dnsBody').innerHTML     = '<p style="color:var(--muted);font-size:13px">Checking SPF, DMARC, MX&hellip;</p>';
+  document.getElementById('portsBody').innerHTML   = '<p style="color:var(--muted);font-size:13px">Scanning 20 common ports&hellip;</p>';
+  document.getElementById('cmsBody').innerHTML     = '<p style="color:var(--muted);font-size:13px">Fingerprinting technology stack&hellip;</p>';
+}
+
+// ── Headers ──────────────────────────────────────────────────────────────────
+
+async function runHeaders(domain) {
+  try {
+    const d = await fetch(`/api/headers?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    if (!d.success) { setGrade('headersGrade','?'); document.getElementById('headersBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
+
+    setGrade('headersGrade', d.grade);
+    let html = '';
+
+    if (d.serverExposed) {
+      html += finding({ severity: 'medium', message: `Server info exposed in response headers: ${d.serverHeader || ''}${d.poweredBy ? ' / ' + d.poweredBy : ''}` });
+    }
+
+    html += '<div style="margin-top:10px">';
+    (d.results || []).forEach(r => {
+      const dotClass = r.present ? 'pass' : (r.severity === 'high' ? 'fail' : r.severity === 'medium' ? 'warn' : 'info');
+      const icon = r.present ? '✓' : '✗';
+      const valColor = r.present ? 'var(--green)' : (r.severity === 'high' ? 'var(--red)' : r.severity === 'medium' ? 'var(--yellow)' : 'var(--muted)');
+      html += `<div class="row">
+        <div class="dot ${dotClass}">${icon}</div>
+        <div class="row-label">
+          <div class="name">${esc(r.header)}</div>
+          ${!r.present ? `<div class="desc">${esc(r.desc)}</div>` : r.value ? `<div class="desc" style="color:var(--accent);opacity:.7">${esc(trunc(r.value, 65))}</div>` : ''}
+        </div>
+        <div class="row-val" style="color:${valColor}">${r.present ? 'Present' : 'Missing'}</div>
+      </div>`;
+    });
+    html += '</div>';
+    document.getElementById('headersBody').innerHTML = html;
+  } catch (e) {
+    setGrade('headersGrade','?');
+    document.getElementById('headersBody').innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  }
+}
+
+// ── SSL ──────────────────────────────────────────────────────────────────────
+
+async function runSsl(domain) {
+  try {
+    const d = await fetch(`/api/ssl?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    if (!d.success) { setGrade('sslGrade','?'); document.getElementById('sslBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
+
+    setGrade('sslGrade', d.grade);
+    let html = '';
+
+    (d.endpoints || []).forEach((ep, i) => {
+      if (i > 0) html += '<hr style="border-color:var(--border);margin:12px 0">';
+
+      html += `<div style="margin-bottom:8px;display:flex;align-items:center;gap:10px">
+        <span style="font-family:var(--mono);font-size:12px;color:var(--muted)">${esc(ep.ipAddress)}</span>
+        <span class="grade ${gradeClass(ep.grade)}" style="width:auto;height:auto;padding:2px 10px;font-size:13px">${esc(ep.grade)}</span>
+      </div>`;
+
+      if (ep.protocols && ep.protocols.length) {
+        html += '<div style="margin:8px 0">';
+        ep.protocols.forEach(p => {
+          const bad = p.deprecated;
+          html += `<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-family:var(--mono);margin:2px;
+            background:${bad ? 'rgba(239,68,68,.15)' : 'rgba(34,197,94,.1)'};
+            color:${bad ? 'var(--red)' : 'var(--green)'};
+            border:1px solid ${bad ? 'rgba(239,68,68,.3)' : 'rgba(34,197,94,.2)'}">
+            ${esc(p.name)} ${esc(p.version)}${bad ? ' ⚠' : ''}
+          </span>`;
+        });
+        html += '</div>';
+      }
+
+      if (ep.hsts) {
+        const ok = ep.hsts.status === 'present';
+        html += finding({ severity: ok ? 'info' : 'high',
+          message: ok
+            ? `HSTS enabled (max-age: ${ep.hsts.maxAge}s${ep.hsts.includeSubDomains ? ', includeSubDomains' : ''}${ep.hsts.preload ? ', preload' : ''})`
+            : 'HSTS not configured — browser may allow HTTP connections'
+        });
+      }
+      if (ep.heartbleed)      html += finding({ severity: 'critical', message: 'Vulnerable to Heartbleed (CVE-2014-0160)!' });
+      if (ep.poodle)           html += finding({ severity: 'high',     message: 'Vulnerable to POODLE attack (SSLv3)' });
+      if (ep.vulnerableBeast)  html += finding({ severity: 'medium',   message: 'Vulnerable to BEAST attack' });
+      if (ep.supportsRC4)      html += finding({ severity: 'high',     message: 'Supports RC4 cipher — weak, should be disabled' });
+    });
+
+    document.getElementById('sslBody').innerHTML = html;
+  } catch (e) {
+    setGrade('sslGrade','?');
+    document.getElementById('sslBody').innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  }
+}
+
+// ── DNS ──────────────────────────────────────────────────────────────────────
+
+async function runDns(domain) {
+  try {
+    const d = await fetch(`/api/dns?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    if (!d.success) { setGrade('dnsGrade','?'); document.getElementById('dnsBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
+
+    setGrade('dnsGrade', d.grade);
+    let html = '';
+
+    // SPF
+    const spfClass  = d.spf?.present ? 'pass' : 'fail';
+    const spfIcon   = d.spf?.present ? '✓' : '✗';
+    const spfColor  = d.spf?.present ? 'var(--green)' : 'var(--red)';
+    html += `<div class="row">
+      <div class="dot ${spfClass}">${spfIcon}</div>
+      <div class="row-label">
+        <div class="name">SPF Record</div>
+        ${d.spf?.value ? `<div class="desc" style="color:var(--accent);opacity:.7;word-break:break-all">${esc(trunc(d.spf.value, 70))}</div>` : ''}
+        ${!d.spf?.present ? '<div class="desc">Missing — your domain can be used to send spoofed email</div>' : ''}
+      </div>
+      <div class="row-val" style="color:${spfColor}">${d.spf?.present ? 'Found' : 'Missing'}</div>
+    </div>`;
+
+    // DMARC
+    const dmarcOk    = d.dmarc?.present && d.dmarc?.policy === 'reject';
+    const dmarcWarn  = d.dmarc?.present && d.dmarc?.policy !== 'reject';
+    const dmarcClass = !d.dmarc?.present ? 'fail' : dmarcOk ? 'pass' : 'warn';
+    const dmarcIcon  = !d.dmarc?.present ? '✗' : dmarcOk ? '✓' : '!';
+    const dmarcColor = !d.dmarc?.present ? 'var(--red)' : dmarcOk ? 'var(--green)' : 'var(--yellow)';
+    html += `<div class="row">
+      <div class="dot ${dmarcClass}">${dmarcIcon}</div>
+      <div class="row-label">
+        <div class="name">DMARC Record</div>
+        ${d.dmarc?.value ? `<div class="desc" style="color:var(--accent);opacity:.7;word-break:break-all">${esc(trunc(d.dmarc.value, 70))}</div>` : ''}
+        ${!d.dmarc?.present ? '<div class="desc">Missing — no enforcement against email spoofing</div>' : ''}
+        ${dmarcWarn ? `<div class="desc">Policy: <strong>${esc(d.dmarc.policy)}</strong> — consider upgrading to "reject"</div>` : ''}
+      </div>
+      <div class="row-val" style="color:${dmarcColor}">${!d.dmarc?.present ? 'Missing' : `p=${esc(d.dmarc.policy)}`}</div>
+    </div>`;
+
+    // DKIM (manual check note)
+    html += `<div class="row">
+      <div class="dot info">i</div>
+      <div class="row-label">
+        <div class="name">DKIM</div>
+        <div class="desc">Requires knowing your email provider's selector — verify manually</div>
+      </div>
+      <div class="row-val">Manual</div>
+    </div>`;
+
+    // MX
+    if (d.mx && d.mx.length) {
+      html += `<div class="row">
+        <div class="dot pass">✓</div>
+        <div class="row-label">
+          <div class="name">MX Records (${d.mx.length})</div>
+          <div class="desc">${d.mx.slice(0,3).map(m => esc(`${m.host} (${m.priority})`)).join(', ')}</div>
+        </div>
+        <div class="row-val" style="color:var(--green)">Found</div>
+      </div>`;
+    }
+
+    // IP
+    if (d.a && d.a.length) {
+      html += `<div class="row">
+        <div class="dot info">i</div>
+        <div class="row-label">
+          <div class="name">IP Address${d.a.length > 1 ? 'es' : ''}</div>
+          <div class="desc" style="font-family:var(--mono)">${d.a.map(esc).join(', ')}</div>
+        </div>
+      </div>`;
+    }
+
+    // Key findings (non-info)
+    const imp = (d.findings || []).filter(f => f.severity !== 'info');
+    if (imp.length) html += '<div style="margin-top:12px">' + imp.map(finding).join('') + '</div>';
+
+    document.getElementById('dnsBody').innerHTML = html;
+  } catch (e) {
+    setGrade('dnsGrade','?');
+    document.getElementById('dnsBody').innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  }
+}
+
+// ── Ports ────────────────────────────────────────────────────────────────────
+
+async function runPorts(domain) {
+  try {
+    const d = await fetch(`/api/ports?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    if (!d.success) { setGrade('portsGrade','?'); document.getElementById('portsBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
+
+    setGrade('portsGrade', d.grade);
+
+    let html = `<div style="margin-bottom:12px;font-size:12px;color:var(--muted)">
+      IP: <span style="font-family:var(--mono);color:var(--accent)">${esc(d.ip)}</span> &nbsp;|&nbsp;
+      <span style="color:${d.openCount > 0 ? 'var(--yellow)' : 'var(--green)'}">${d.openCount} open port${d.openCount !== 1 ? 's' : ''} found</span>
+      ${d.critCount > 0 ? `<span style="color:var(--red)"> (${d.critCount} critical!)</span>` : ''}
+    </div>`;
+
+    const openPorts = (d.ports || []).filter(p => p.open);
+    if (openPorts.length > 0) {
+      openPorts.forEach(p => {
+        const sev = p.risk === 'critical' ? 'critical' : p.risk === 'high' ? 'high' : p.risk === 'medium' ? 'medium' : 'info';
+        html += finding({ severity: sev, message: `Port ${p.port} (${p.name}) open — ${p.note}` });
+      });
+    } else {
+      html += finding({ severity: 'info', message: 'No high-risk ports found open in common port scan' });
+    }
+
+    // Closed ports summary
+    const closedCount = (d.ports || []).filter(p => !p.open).length;
+    if (closedCount > 0) {
+      html += `<div style="margin-top:10px;font-size:12px;color:var(--muted)">${closedCount} other scanned ports are closed.</div>`;
+    }
+
+    document.getElementById('portsBody').innerHTML = html;
+  } catch (e) {
+    setGrade('portsGrade','?');
+    document.getElementById('portsBody').innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  }
+}
+
+// ── CMS ──────────────────────────────────────────────────────────────────────
+
+async function runCms(domain) {
+  try {
+    const d = await fetch(`/api/cms?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    if (!d.success) { setGrade('cmsGrade','?'); document.getElementById('cmsBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
+
+    const findings = d.findings || [];
+    const mHigh = findings.filter(f => f.severity === 'critical' || f.severity === 'high').length;
+    const mMed  = findings.filter(f => f.severity === 'medium').length;
+    const grade = mHigh > 0 ? 'D' : mMed > 1 ? 'C' : mMed === 1 ? 'B' : 'A';
+    setGrade('cmsGrade', grade);
+
+    let html = '';
+    const detected = d.detected || [];
+
+    if (detected.length > 0) {
+      html += '<div style="margin-bottom:14px">';
+      html += '<div style="font-size:11px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px">Detected</div>';
+      detected.forEach(t => { html += `<span class="tag">${esc(t)}</span>`; });
+      html += '</div>';
+    }
+
+    // Server / CDN info rows
+    if (d.serverHeader || d.poweredBy || d.cdn) {
+      if (d.serverHeader) {
+        html += `<div class="row">
+          <div class="dot ${d.versionExposed ? 'warn' : 'info'}">${d.versionExposed ? '!' : 'i'}</div>
+          <div class="row-label">
+            <div class="name">Server</div>
+            <div class="desc" style="font-family:var(--mono)">${esc(d.serverHeader)}</div>
+          </div>
+        </div>`;
+      }
+      if (d.poweredBy) {
+        html += `<div class="row">
+          <div class="dot warn">!</div>
+          <div class="row-label">
+            <div class="name">X-Powered-By</div>
+            <div class="desc" style="font-family:var(--mono)">${esc(d.poweredBy)}</div>
+          </div>
+        </div>`;
+      }
+      if (d.cdn) {
+        html += `<div class="row">
+          <div class="dot pass">✓</div>
+          <div class="row-label">
+            <div class="name">CDN / WAF</div>
+            <div class="desc">${esc(d.cdn)}</div>
+          </div>
+        </div>`;
+      }
+    }
+
+    if (findings.length > 0) {
+      html += '<div style="margin-top:12px">' + findings.map(finding).join('') + '</div>';
+    }
+
+    if (detected.length === 0 && !d.serverHeader && !d.poweredBy) {
+      html += finding({ severity: 'info', message: 'No obvious technology fingerprints detected — good stack hygiene' });
+    }
+
+    document.getElementById('cmsBody').innerHTML = html;
+  } catch (e) {
+    setGrade('cmsGrade','?');
+    document.getElementById('cmsBody').innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  }
+}
+
+// ── Deep links ───────────────────────────────────────────────────────────────
+
+function updateDeepLinks(domain) {
+  const enc = encodeURIComponent(domain);
+  const links = [
+    { label: 'SecurityHeaders.com', icon: '🛡️', url: `https://securityheaders.com/?q=${enc}&followRedirects=on` },
+    { label: 'SSL Labs',            icon: '🔒', url: `https://www.ssllabs.com/ssltest/analyze.html?d=${enc}` },
+    { label: 'MXToolbox',           icon: '📧', url: `https://mxtoolbox.com/SuperTool.aspx?action=mx%3a${enc}` },
+    { label: 'Shodan',              icon: '🔍', url: `https://www.shodan.io/search?query=${enc}` },
+    { label: 'BuiltWith',           icon: '🧬', url: `https://builtwith.com/${enc}` },
+    { label: 'WhatCMS',             icon: '⚙️',  url: `https://whatcms.org/?s=${enc}` },
+  ];
+  document.getElementById('deepLinks').innerHTML = links
+    .map(l => `<a href="${l.url}" target="_blank" rel="noopener" class="deep-link">${l.icon} ${esc(l.label)}</a>`)
+    .join('');
+}
+
+// ── Enter key ────────────────────────────────────────────────────────────────
+document.getElementById('domainInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') startScan();
+});
+</script>
+</body>
+</html>
