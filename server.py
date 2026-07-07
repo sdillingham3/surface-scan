@@ -4,7 +4,10 @@
 import re
 import socket
 import time
+import threading
+import uuid
 import concurrent.futures
+from datetime import datetime, timedelta
 from urllib.parse import urlparse, urlencode
 
 import requests
@@ -13,8 +16,14 @@ from flask import Flask, request, jsonify, send_from_directory
 
 app = Flask(__name__, static_folder="public", static_url_path="")
 
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; SurfaceScan/1.0)"}
-TIMEOUT = 15  # seconds for HTTP requests
+HEADERS  = {"User-Agent": "Mozilla/5.0 (compatible; SurfaceScan/1.0)"}
+TIMEOUT  = 15   # seconds for HTTP requests
+PORT     = 3000
+
+# ── Scheduler state ───────────────────────────────────────────────────────────
+_schedules     = {}   # id → config dict
+_results_store = {}   # id → list of result snapshots (newest first, max 10)
+_lock          = threading.Lock()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -412,6 +421,123 @@ def api_cms():
             continue
 
     return jsonify({"success": False, "error": "Could not fetch page"})
+
+
+# ── Scheduler ────────────────────────────────────────────────────────────────
+
+def _run_full_scan(domain: str) -> dict:
+    """Call all five check endpoints locally and combine into one dict."""
+    base   = f"http://127.0.0.1:{PORT}"
+    checks = ["headers", "dns", "ports", "cms", "ssl"]
+
+    def fetch(check):
+        try:
+            r = requests.get(f"{base}/api/{check}?domain={domain}", timeout=250)
+            return check, r.json()
+        except Exception as e:
+            return check, {"success": False, "error": str(e)}
+
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
+        for check, data in ex.map(lambda c: fetch(c), checks):
+            results[check] = data
+    return results
+
+
+def _scan_job(sid: str):
+    """Background worker: run full scan, store result, schedule next run."""
+    with _lock:
+        if sid not in _schedules:
+            return
+        domain      = _schedules[sid]["domain"]
+        interval_h  = _schedules[sid]["interval_hours"]
+        _schedules[sid]["status"]   = "running"
+        _schedules[sid]["last_run"] = datetime.now().isoformat()
+
+    try:
+        snapshot = _run_full_scan(domain)
+        snapshot["scanned_at"] = datetime.now().isoformat()
+        snapshot["domain"]     = domain
+        with _lock:
+            _results_store.setdefault(sid, []).insert(0, snapshot)
+            _results_store[sid] = _results_store[sid][:10]
+    except Exception as e:
+        with _lock:
+            if sid in _schedules:
+                _schedules[sid]["last_error"] = str(e)
+    finally:
+        with _lock:
+            if sid not in _schedules:
+                return
+            next_dt = datetime.now() + timedelta(hours=interval_h)
+            _schedules[sid]["status"]   = "idle"
+            _schedules[sid]["next_run"] = next_dt.isoformat()
+            timer = threading.Timer(interval_h * 3600, _scan_job, args=[sid])
+            timer.daemon = True
+            timer.start()
+            _schedules[sid]["_timer"] = timer
+
+
+@app.route("/api/schedule", methods=["POST"])
+def create_schedule():
+    body   = request.json or {}
+    domain = clean_domain(body.get("domain", ""))
+    try:
+        interval_h = float(body.get("interval_hours", 24))
+    except (ValueError, TypeError):
+        return jsonify({"error": "interval_hours must be a number"}), 400
+
+    if not domain:
+        return jsonify({"error": "Domain required"}), 400
+    if interval_h < 0.5:
+        return jsonify({"error": "Minimum interval is 0.5 hours (30 min)"}), 400
+
+    sid = str(uuid.uuid4())[:8]
+    with _lock:
+        _schedules[sid] = {
+            "id":             sid,
+            "domain":         domain,
+            "interval_hours": interval_h,
+            "status":         "running",
+            "created_at":     datetime.now().isoformat(),
+            "last_run":       None,
+            "next_run":       None,
+            "last_error":     None,
+        }
+
+    threading.Thread(target=_scan_job, args=[sid], daemon=True).start()
+    return jsonify({"success": True, "id": sid})
+
+
+@app.route("/api/schedule", methods=["GET"])
+def list_schedules():
+    with _lock:
+        safe = [{k: v for k, v in s.items() if k != "_timer"}
+                for s in _schedules.values()]
+    return jsonify({"schedules": safe})
+
+
+@app.route("/api/schedule/<sid>", methods=["DELETE"])
+def delete_schedule(sid):
+    with _lock:
+        if sid not in _schedules:
+            return jsonify({"error": "Not found"}), 404
+        t = _schedules[sid].get("_timer")
+        if t:
+            t.cancel()
+        del _schedules[sid]
+        _results_store.pop(sid, None)
+    return jsonify({"success": True})
+
+
+@app.route("/api/schedule/<sid>/results")
+def get_schedule_results(sid):
+    with _lock:
+        if sid not in _schedules:
+            return jsonify({"error": "Not found"}), 404
+        schedule = {k: v for k, v in _schedules[sid].items() if k != "_timer"}
+        results  = _results_store.get(sid, [])
+    return jsonify({"schedule": schedule, "results": results})
 
 
 # ── Static / Root ─────────────────────────────────────────────────────────────

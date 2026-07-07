@@ -169,6 +169,68 @@
 
     .hidden { display: none !important; }
 
+    /* ── Monitor panel ── */
+    .monitor-wrap { max-width: 740px; margin: 0 auto 40px; }
+    .monitor-toggle {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      background: none; border: 1px solid var(--border); border-radius: 8px;
+      color: var(--muted); font-size: 13px; padding: 8px 18px; cursor: pointer;
+      margin: 0 auto 0; transition: border-color .2s, color .2s; width: 100%;
+      max-width: 540px;
+    }
+    .monitor-toggle:hover { border-color: var(--accent); color: var(--accent); }
+    .monitor-panel {
+      margin-top: 14px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden;
+    }
+    .monitor-form {
+      padding: 18px 20px; border-bottom: 1px solid var(--border);
+      display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;
+    }
+    .monitor-form label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; display: block; margin-bottom: 5px; }
+    .monitor-form input, .monitor-form select {
+      background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 9px 12px; font-size: 13px; color: var(--text); font-family: var(--mono);
+      outline: none; transition: border-color .2s;
+    }
+    .monitor-form input:focus, .monitor-form select:focus { border-color: var(--accent); }
+    .monitor-form .f-domain { flex: 1; min-width: 160px; }
+    .monitor-form .f-interval { width: 160px; }
+    .monitor-form select option { background: var(--card); }
+    .add-btn {
+      background: linear-gradient(135deg, var(--accent), #0099cc); color: #000;
+      border: none; border-radius: 8px; padding: 9px 18px; font-size: 13px;
+      font-weight: 700; cursor: pointer; white-space: nowrap; transition: opacity .2s;
+    }
+    .add-btn:hover { opacity: .85; }
+    .add-btn:disabled { opacity: .4; cursor: not-allowed; }
+    /* Monitor rows */
+    .monitor-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+    .monitor-row {
+      padding: 14px 20px; display: flex; align-items: center; gap: 14px;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    .monitor-row:last-child { border-bottom: none; }
+    .monitor-status-dot {
+      width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+    }
+    .mst-running { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); animation: pulse 1.2s infinite; }
+    .mst-idle    { background: var(--green); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .monitor-info { flex: 1; min-width: 0; }
+    .monitor-domain { font-size: 14px; font-weight: 600; font-family: var(--mono); }
+    .monitor-meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+    .monitor-next { font-size: 11px; color: var(--accent); margin-top: 2px; font-family: var(--mono); }
+    .monitor-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .mbtn {
+      padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+      cursor: pointer; border: 1px solid var(--border); background: var(--bg2);
+      color: var(--text); transition: border-color .2s, color .2s;
+    }
+    .mbtn:hover { border-color: var(--accent); color: var(--accent); }
+    .mbtn-danger:hover { border-color: var(--red); color: var(--red); }
+    .mbtn:disabled { opacity: .4; cursor: not-allowed; }
+
     @media (max-width: 580px) {
       .scan-form { flex-direction: column; }
       .results-grid { grid-template-columns: 1fr; }
@@ -198,6 +260,37 @@
       <span>DNS (SPF / DMARC)</span>
       <span>Open Ports</span>
       <span>CMS / Tech Stack</span>
+    </div>
+  </div>
+
+  <!-- ── Auto-Monitor Panel ── -->
+  <div class="monitor-wrap">
+    <button class="monitor-toggle" onclick="toggleMonitorPanel()">
+      <span id="monitorToggleIcon">▶</span> Auto-Monitor — schedule recurring scans
+    </button>
+    <div id="monitorPanel" class="monitor-panel hidden">
+      <div class="monitor-form">
+        <div style="flex:1;min-width:160px">
+          <label>Domain</label>
+          <input id="mDomain" class="f-domain" type="text" placeholder="example.com" autocomplete="off" spellcheck="false" style="width:100%" />
+        </div>
+        <div>
+          <label>Repeat Every</label>
+          <select id="mInterval" class="f-interval" onchange="toggleCustomInterval(this.value)">
+            <option value="1">Every 1 hour</option>
+            <option value="6">Every 6 hours</option>
+            <option value="12">Every 12 hours</option>
+            <option value="24" selected>Every 24 hours</option>
+            <option value="custom">Custom…</option>
+          </select>
+        </div>
+        <div id="mCustomWrap" class="hidden">
+          <label>Hours</label>
+          <input id="mCustomHours" type="number" min="0.5" step="0.5" placeholder="e.g. 48" style="width:90px" />
+        </div>
+        <button class="add-btn" onclick="addMonitor()">+ Add Monitor</button>
+      </div>
+      <div id="monitorList"><div class="monitor-empty">No active monitors yet.</div></div>
     </div>
   </div>
 
@@ -357,9 +450,9 @@ function resetCards() {
 
 // ── Headers ──────────────────────────────────────────────────────────────────
 
-async function runHeaders(domain) {
+async function runHeaders(domain, preloaded = null) {
   try {
-    const d = await fetch(`/api/headers?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    const d = preloaded ?? await fetch(`/api/headers?domain=${encodeURIComponent(domain)}`).then(r => r.json());
     if (!d.success) { setGrade('headersGrade','?'); document.getElementById('headersBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
 
     setGrade('headersGrade', d.grade);
@@ -393,9 +486,9 @@ async function runHeaders(domain) {
 
 // ── SSL ──────────────────────────────────────────────────────────────────────
 
-async function runSsl(domain) {
+async function runSsl(domain, preloaded = null) {
   try {
-    const d = await fetch(`/api/ssl?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    const d = preloaded ?? await fetch(`/api/ssl?domain=${encodeURIComponent(domain)}`).then(r => r.json());
     if (!d.success) { setGrade('sslGrade','?'); document.getElementById('sslBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
 
     setGrade('sslGrade', d.grade);
@@ -446,9 +539,9 @@ async function runSsl(domain) {
 
 // ── DNS ──────────────────────────────────────────────────────────────────────
 
-async function runDns(domain) {
+async function runDns(domain, preloaded = null) {
   try {
-    const d = await fetch(`/api/dns?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    const d = preloaded ?? await fetch(`/api/dns?domain=${encodeURIComponent(domain)}`).then(r => r.json());
     if (!d.success) { setGrade('dnsGrade','?'); document.getElementById('dnsBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
 
     setGrade('dnsGrade', d.grade);
@@ -531,9 +624,9 @@ async function runDns(domain) {
 
 // ── Ports ────────────────────────────────────────────────────────────────────
 
-async function runPorts(domain) {
+async function runPorts(domain, preloaded = null) {
   try {
-    const d = await fetch(`/api/ports?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    const d = preloaded ?? await fetch(`/api/ports?domain=${encodeURIComponent(domain)}`).then(r => r.json());
     if (!d.success) { setGrade('portsGrade','?'); document.getElementById('portsBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
 
     setGrade('portsGrade', d.grade);
@@ -569,9 +662,9 @@ async function runPorts(domain) {
 
 // ── CMS ──────────────────────────────────────────────────────────────────────
 
-async function runCms(domain) {
+async function runCms(domain, preloaded = null) {
   try {
-    const d = await fetch(`/api/cms?domain=${encodeURIComponent(domain)}`).then(r => r.json());
+    const d = preloaded ?? await fetch(`/api/cms?domain=${encodeURIComponent(domain)}`).then(r => r.json());
     if (!d.success) { setGrade('cmsGrade','?'); document.getElementById('cmsBody').innerHTML = `<div class="error">${esc(d.error)}</div>`; return; }
 
     const findings = d.findings || [];
@@ -657,6 +750,171 @@ function updateDeepLinks(domain) {
 document.getElementById('domainInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') startScan();
 });
+
+// ── Auto-Monitor ─────────────────────────────────────────────────────────────
+
+let monitorPanelOpen = false;
+let monitorPollTimer = null;
+
+function toggleMonitorPanel() {
+  monitorPanelOpen = !monitorPanelOpen;
+  document.getElementById('monitorPanel').classList.toggle('hidden', !monitorPanelOpen);
+  document.getElementById('monitorToggleIcon').textContent = monitorPanelOpen ? '▼' : '▶';
+  if (monitorPanelOpen) {
+    refreshMonitors();
+    // Pre-fill domain from main input
+    const d = document.getElementById('domainInput').value.trim();
+    if (d) document.getElementById('mDomain').value = d;
+  }
+}
+
+function toggleCustomInterval(val) {
+  document.getElementById('mCustomWrap').classList.toggle('hidden', val !== 'custom');
+}
+
+async function addMonitor() {
+  const domainRaw  = document.getElementById('mDomain').value.trim();
+  const domain     = domainRaw.replace(/^https?:\/\//,'').replace(/\/.*$/,'');
+  const selectVal  = document.getElementById('mInterval').value;
+  const intervalH  = selectVal === 'custom'
+    ? parseFloat(document.getElementById('mCustomHours').value)
+    : parseFloat(selectVal);
+
+  if (!domain)           return alert('Please enter a domain.');
+  if (!intervalH || intervalH < 0.5) return alert('Minimum interval is 0.5 hours.');
+
+  const btn = document.querySelector('.add-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+
+  try {
+    const r = await fetch('/api/schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain, interval_hours: intervalH }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error);
+    document.getElementById('mDomain').value = '';
+    refreshMonitors();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '+ Add Monitor';
+  }
+}
+
+async function deleteMonitor(sid) {
+  if (!confirm('Stop this monitor?')) return;
+  await fetch(`/api/schedule/${sid}`, { method: 'DELETE' });
+  refreshMonitors();
+}
+
+async function viewMonitorResults(sid) {
+  const r = await fetch(`/api/schedule/${sid}/results`).then(x => x.json());
+  if (!r.results || r.results.length === 0) {
+    alert('No results yet — the first scan may still be running.');
+    return;
+  }
+  const snap = r.results[0];   // most recent
+  const domain = snap.domain;
+
+  // Populate domain input and show results section
+  document.getElementById('domainInput').value = domain;
+  document.getElementById('resultsSection').classList.remove('hidden');
+  resetCards();
+  updateDeepLinks(domain);
+
+  // Inject a banner showing when this data was captured
+  const ts = snap.scanned_at ? new Date(snap.scanned_at).toLocaleString() : 'unknown';
+  // Load stored data into each card (no new network requests)
+  await Promise.all([
+    runHeaders(domain, snap.headers),
+    runSsl(domain,     snap.ssl),
+    runDns(domain,     snap.dns),
+    runPorts(domain,   snap.ports),
+    runCms(domain,     snap.cms),
+  ]);
+
+  // Append timestamp banner to results
+  const existing = document.getElementById('monitorBanner');
+  if (existing) existing.remove();
+  const banner = document.createElement('div');
+  banner.id = 'monitorBanner';
+  banner.style.cssText = 'margin-top:14px;padding:10px 16px;background:rgba(0,212,255,.07);border:1px solid rgba(0,212,255,.2);border-radius:8px;font-size:12px;color:var(--muted);text-align:center';
+  banner.innerHTML = `Showing stored monitor results for <strong style="color:var(--accent)">${esc(domain)}</strong> — captured ${esc(ts)}`;
+  document.getElementById('resultsSection').appendChild(banner);
+
+  // Scroll into view
+  document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function scanMonitorNow(sid, domain) {
+  await fetch(`/api/schedule/${sid}`, { method: 'DELETE' });
+  const r = await fetch('/api/schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ domain, interval_hours: parseFloat(document.querySelector(`[data-sid="${sid}"]`)?.dataset?.interval || 24) }),
+  });
+  const d = await r.json();
+  refreshMonitors();
+}
+
+function formatCountdown(isoStr) {
+  if (!isoStr) return '—';
+  const diff = new Date(isoStr) - new Date();
+  if (diff <= 0) return 'any moment…';
+  const h = Math.floor(diff / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  return h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+function fmtInterval(h) {
+  if (h === 1)  return 'every hour';
+  if (h === 24) return 'every 24 h';
+  if (h < 1)    return `every ${h * 60 | 0} min`;
+  return `every ${h} h`;
+}
+
+async function refreshMonitors() {
+  const r = await fetch('/api/schedule').then(x => x.json()).catch(() => ({ schedules: [] }));
+  const list = document.getElementById('monitorList');
+
+  if (!r.schedules || r.schedules.length === 0) {
+    list.innerHTML = '<div class="monitor-empty">No active monitors yet.</div>';
+    return;
+  }
+
+  list.innerHTML = r.schedules.map(s => {
+    const dotClass = s.status === 'running' ? 'mst-running' : 'mst-idle';
+    const lastRun  = s.last_run  ? new Date(s.last_run).toLocaleString()  : 'pending…';
+    const countdown = s.status === 'running' ? '⏳ running now…' : `next in ${formatCountdown(s.next_run)}`;
+    return `<div class="monitor-row" data-sid="${s.id}" data-interval="${s.interval_hours}">
+      <div class="monitor-status-dot ${dotClass}"></div>
+      <div class="monitor-info">
+        <div class="monitor-domain">${esc(s.domain)}</div>
+        <div class="monitor-meta">${fmtInterval(s.interval_hours)} &nbsp;·&nbsp; last scan: ${esc(lastRun)}</div>
+        <div class="monitor-next">${esc(countdown)}</div>
+        ${s.last_error ? `<div style="font-size:11px;color:var(--red);margin-top:2px">⚠ ${esc(s.last_error)}</div>` : ''}
+      </div>
+      <div class="monitor-actions">
+        <button class="mbtn" onclick="viewMonitorResults('${s.id}')">View Latest</button>
+        <button class="mbtn mbtn-danger" onclick="deleteMonitor('${s.id}')">Stop</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Poll monitor list every 20 s while panel is open
+setInterval(() => { if (monitorPanelOpen) refreshMonitors(); }, 20000);
+// Update countdowns every second
+setInterval(() => {
+  document.querySelectorAll('.monitor-next').forEach(el => {
+    // re-render is handled by refreshMonitors; just tick countdown strings
+  });
+}, 1000);
 </script>
 </body>
 </html>
